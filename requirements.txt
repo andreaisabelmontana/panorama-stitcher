@@ -1,0 +1,7 @@
+numpy>=1.21
+# OpenCV is optional but recommended: enables ORB feature matching and fast
+# warpPerspective. If it cannot be installed, the code falls back to a pure
+# NumPy path (Harris corners + NCC matching + bilinear warping).
+opencv-python>=4.5
+# Test runner.
+pytest>=7.0

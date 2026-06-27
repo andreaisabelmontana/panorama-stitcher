@@ -57,6 +57,16 @@
   .credit{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:26px}
   .credit .k{font-family:var(--mono);font-size:.72rem;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
   footer .fine{font-size:.8rem;color:var(--muted);margin-top:22px;text-align:center}
+  figure{margin:0}
+  .shot{width:100%;border:1px solid var(--line);border-radius:12px;display:block}
+  figcaption{font-family:var(--mono);font-size:.72rem;letter-spacing:.06em;color:var(--muted);margin-top:8px;text-transform:uppercase}
+  .demo{display:grid;gap:24px;margin-top:8px}
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-top:24px}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px}
+  .stat .v{font-family:var(--serif);font-size:1.9rem;color:var(--accent);line-height:1}
+  .stat .k2{font-family:var(--mono);font-size:.7rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-top:8px}
+  pre{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 20px;overflow-x:auto;font-family:var(--mono);font-size:.84rem;line-height:1.6;color:var(--ink)}
+  pre code{background:none;padding:0;color:inherit}
 </style>
 </head>
 <body>
@@ -64,10 +74,10 @@
   <div class="wrap">
     <p class="eyebrow">From-Scratch Build · Computer Vision</p>
     <h1>Panorama Stitcher</h1>
-    <p class="lede">Take three overlapping snapshots of a skyline and the stitcher fuses them into one wide, seamless panorama — no visible seam, no double edges. I rebuilt the classic stitching pipeline from scratch because it's where the beautiful geometry of computer vision becomes something you can actually see: features, homographies and RANSAC, all in service of one clean image.</p>
+    <p class="lede">Take overlapping snapshots of a skyline and the stitcher fuses them into one wide, seamless panorama — no visible seam, no double edges. The homography math (normalized DLT via SVD) and RANSAC are written from scratch in NumPy; OpenCV supplies ORB features and fast warping, with a pure-NumPy fallback when it's unavailable. It's a working command-line tool, not a description of one.</p>
     <div class="meta">
-      <span class="chip">Python</span><span class="chip">OpenCV / NumPy</span><span class="chip">Feature matching</span>
-      <span class="chip">Homography</span><span class="chip">RANSAC</span><span class="chip">Image blending</span>
+      <span class="chip">Python · NumPy</span><span class="chip">DLT homography (from scratch)</span><span class="chip">RANSAC (from scratch)</span>
+      <span class="chip">ORB / Harris features</span><span class="chip">Feather blending</span><span class="chip">11 passing tests</span>
     </div>
   </div>
 </header>
@@ -82,6 +92,29 @@
       <div class="n">3×3</div>
       <div class="l">the homography matrix — nine numbers that capture how one photo relates to the next, and the heart of the whole build.</div>
     </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <p class="kicker">The demo</p>
+    <h2>Two crops in, one panorama out</h2>
+    <p>The bundled demo splits a 1200×500 textured skyline into two overlapping 744×500 crops, then stitches them back together. ORB finds matches, RANSAC fits the homography that the most matches agree on, and the overlap is feather-blended away.</p>
+    <div class="demo">
+      <figure><img class="shot" src="samples/before.png" alt="Two overlapping crops of a skyline, side by side" /><figcaption>Before — two overlapping crops</figcaption></figure>
+      <figure><img class="shot" src="samples/output.png" alt="The two crops stitched into one seamless panorama" /><figcaption>After — stitched panorama (1202×502)</figcaption></figure>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="v">554</div><div class="k2">feature matches</div></div>
+      <div class="stat"><div class="v">478</div><div class="k2">RANSAC inliers · 86%</div></div>
+      <div class="stat"><div class="v">0.265<span style="font-size:1rem">px</span></div><div class="k2">mean reproj. error</div></div>
+      <div class="stat"><div class="v">1202×502</div><div class="k2">output (truth: 1200×500)</div></div>
+    </div>
+    <pre><code>pip install -r requirements.txt
+python stitch.py                       # bundled demo → output.png
+python stitch.py a.jpg b.jpg c.jpg -o pano.png   # your own photos
+python -m pytest -q                    # 11 passing tests</code></pre>
+    <p class="muted" style="margin-top:18px">Numbers above are from a real run on the OpenCV ORB backend. The reconstructed panorama lands within 2 px of the original scene the crops were cut from.</p>
   </div>
 </section>
 
@@ -105,13 +138,13 @@
   <div class="wrap">
     <p class="kicker">Architecture</p>
     <h2>How a panorama is built</h2>
-    <p>Each new photo is folded into the panorama by the same sequence:</p>
+    <p>The code lives in a small <code>panorama/</code> package plus <code>stitch.py</code>. Each new photo is folded in by the same sequence:</p>
     <ol class="flow">
-      <li><h3>Detect &amp; describe</h3><p>Find keypoints and compute descriptors in both images.</p></li>
-      <li><h3>Match</h3><p>Pair descriptors to propose correspondences between the overlapping photos.</p></li>
-      <li><h3>Estimate</h3><p>Use RANSAC to fit the homography that the most matches agree on.</p></li>
-      <li><h3>Warp</h3><p>Reproject one image into the other's coordinate frame.</p></li>
-      <li><h3>Blend</h3><p>Merge the overlap smoothly to erase the seam, then move to the next photo.</p></li>
+      <li><h3>Detect &amp; match · <code>features.py</code></h3><p>ORB keypoints + Hamming brute-force + Lowe ratio test (OpenCV), or Harris corners + NCC patch matching (NumPy fallback).</p></li>
+      <li><h3>Estimate H · <code>homography.py</code></h3><p>Normalized Direct Linear Transform: build the 2n×9 system, solve by SVD, Hartley-normalize for conditioning. From scratch in NumPy.</p></li>
+      <li><h3>Robust fit · <code>ransac.py</code></h3><p>RANSAC over minimal 4-point samples, inliers counted by reprojection error, adaptive iteration count, refit on all inliers. From scratch.</p></li>
+      <li><h3>Warp · <code>blend.py</code></h3><p>Compute the canvas bounding box and reproject each image into a shared frame (OpenCV warpPerspective or NumPy bilinear inverse-map).</p></li>
+      <li><h3>Blend · <code>blend.py</code></h3><p>Distance-transform feather weights merge the overlap so the seam disappears, then on to the next photo.</p></li>
     </ol>
   </div>
 </section>
@@ -134,7 +167,7 @@
   <div class="wrap">
     <div class="credit">
       <div class="k">About this build</div>
-      <p style="margin:0">An original, from-scratch build by <b>Andrea</b> — written to learn the classic image-stitching pipeline from first principles: keypoint detection, feature matching, RANSAC homography estimation, perspective warping and seamless blending. Plain HTML/CSS, deployed on GitHub Pages.</p>
+      <p style="margin:0">A from-scratch build by <b>Andrea</b> — the homography (normalized DLT via SVD) and RANSAC are hand-written in NumPy; OpenCV provides ORB features and fast warping, with a pure-NumPy fallback. The repo ships the runnable <code>stitch.py</code>, a <code>panorama/</code> package, generated sample images and a self-contained pytest suite (11 passing) that proves the math recovers a known homography from outlier-laced matches. This page is a single self-contained HTML file on GitHub Pages.</p>
     </div>
     <p class="fine">Built from scratch by Andrea · one of an ongoing series of learning builds.</p>
   </div>
